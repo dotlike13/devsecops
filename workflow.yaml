@@ -1,0 +1,70 @@
+name: Docker image vulnerability Scan
+
+on:
+  push:
+    branches:
+    - stg/test/*
+
+jobs:
+  build:
+    name: trivy image scan
+    runs-on: ubuntu-20.04
+    steps:
+      - name: check branch
+        run: |
+          # github.ref_name 값 가져오기
+          REF_TYPE=${{ github.ref_name }}
+          
+          # "/" 기준으로 split
+          IFS='/' read -ra REF_TYPE_ARRAY <<< "$REF_TYPE"
+          
+          # 서비스 명 가져와서 변수로 저장
+          echo "SERVICE_NAME=${REF_TYPE_ARRAY[2]}" >> $GITHUB_ENV
+          
+          echo "service name : $SERVICE_NAME"
+      
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Check helm vaule.yaml image tag
+        run: |
+          # 이미지 태그 부분을 변수로 저장
+          echo "IMAGE_TAG=$(yq e '.replicaset.containers[].image.tag' "${{ env.SERVICE_NAME }}/values.yaml")" >> $GITHUB_ENV
+          
+          echo "Image tag : $IMAGE_TAG"
+        
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ secrets.IMAGE_SERVER }}/${{ env.SERVICE_NAME }}:${{ env.IMAGE_TAG }}'
+          format: 'json'
+          # exit-code: '1'
+          output: "result.json"
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+        env:
+          TRIVY_USERNAME: ${{ secrets.USER_NAME }}
+          TRIVY_PASSWORD: ${{ secrets.PASSWORD }}
+      
+      - name: Run Trivy vulnerability scanner
+        uses: CemitDigital/trivy-report-issue-action@v1.1
+        with:
+          # Token passed by GitHub actions, required for access to GitHub issues
+          token: ${{ secrets.GLEN_TOKEN }}
+
+          # File with scan results
+          input-filename: "result.json"
+
+          # Label name
+          # Default: vulnerability (this label must be created in advance)
+          label: 'vulnerability'
+
+          # Assignees, comma separated
+          # Default: ''
+          # Example: 'monalisa,hubot'
+          assignee: ''
+
+          # If set the new issues will be assigned to the specified project
+          # Default: ''
+          project-id: ''
